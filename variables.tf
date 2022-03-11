@@ -201,9 +201,9 @@ variable "tls_security_policy" {
 
 variable "aws_profile" {
   type    = string
-  default = "default"
+  default = "nasuni"
 }
 
 variable "admin_secret" {
-  default = "nct/nce/os/admin"
+  default = "nasuni-labs-os-admin"
 }
