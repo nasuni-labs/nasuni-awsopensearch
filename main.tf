@@ -4,6 +4,7 @@
 ##  Organization  :   Nasuni Labs   
 #########################################################
 
+##main
 locals {
   domain_name = var.use_prefix ? join("", [lower(var.domain_prefix), lower(var.domain_name), "-", lower(random_id.es_unique_id.hex)]) : lower(var.domain_name)
   inside_vpc  = length(var.vpc_options["subnet_ids"]) > 0 ? true : false
@@ -25,16 +26,8 @@ data "aws_iam_policy_document" "es_management_access" {
 
     principals {
       type = "AWS"
-      /* identifiers = ["*"] */
       identifiers = distinct(compact(var.management_iam_roles))
     }
-
-    /* condition {
-      test     = "IpAddress"
-      variable = "aws:SourceIp"
-
-      values = distinct(compact(var.management_public_ip_addresses))
-    } */
   }
 }
 
@@ -42,10 +35,14 @@ resource "random_id" "es_unique_id" {
   byte_length = 3
 }
 
+data "aws_iam_role" "os_service_linked_role" {
+  name = "AWSServiceRoleForAmazonOpenSearchService"
+}
+
 resource "aws_elasticsearch_domain" "es" {
   count = false == local.inside_vpc ? 1 : 0
 
-  depends_on = [aws_iam_service_linked_role.es]
+  depends_on = [data.aws_iam_role.os_service_linked_role,aws_cloudwatch_log_group.es-log-group]
 
   domain_name           = lower(local.domain_name)
   elasticsearch_version = var.es_version
@@ -89,17 +86,12 @@ resource "aws_elasticsearch_domain" "es" {
     }
   }
 
-
-
-  dynamic "log_publishing_options" {
-    for_each = var.log_publishing_options
-    content {
-
-      cloudwatch_log_group_arn = log_publishing_options.value.cloudwatch_log_group_arn
-      enabled                  = lookup(log_publishing_options.value, "enabled", null)
-      log_type                 = log_publishing_options.value.log_type
-    }
+  log_publishing_options {
+    cloudwatch_log_group_arn = aws_cloudwatch_log_group.es-log-group.arn
+    enabled                  = true
+    log_type                 = var.es_log_type
   }
+
 
   node_to_node_encryption {
     /* enabled = var.node_to_node_encryption_enabled */
@@ -116,12 +108,18 @@ resource "aws_elasticsearch_domain" "es" {
     automated_snapshot_start_hour = var.snapshot_start_hour
   }
 
+  vpc_options {
+    subnet_ids = [var.user_subnet_id]
+    security_group_ids = [ var.nac_es_securitygroup_id ]
+  }
+
   tags = merge(
     {
       "Domain" = lower(local.domain_name)
     },
     var.tags,
   )
+  
 }
 
 resource "aws_elasticsearch_domain_policy" "es_management_access" {
@@ -131,6 +129,37 @@ resource "aws_elasticsearch_domain_policy" "es_management_access" {
   access_policies = data.aws_iam_policy_document.es_management_access[0].json
 
 }
+##########################################
+resource "aws_cloudwatch_log_group" "es-log-group" {
+  name = "${local.domain_name}-log-group"
+}
+
+resource "aws_cloudwatch_log_resource_policy" "es-log-policy" {
+  policy_name = "nasuni-es-log-policy"
+
+  policy_document = <<CONFIG
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "opensearchservice.amazonaws.com"
+      },
+      "Action": [
+        "logs:PutLogEvents",
+        "logs:PutLogEventsBatch",
+        "logs:CreateLogStream"
+      ],
+      "Resource": "arn:aws:logs:*"
+    }
+  ]
+}
+CONFIG
+}
+
+#########################################
+
 
 ################# Update Admin Secret with ES Data ######################
 
@@ -144,6 +173,7 @@ resource "aws_secretsmanager_secret_version" "admin_secret" {
   secret_string = jsonencode(local.admin_secret_data_to_update)
   depends_on = [
     aws_elasticsearch_domain.es,
+    data.aws_secretsmanager_secret.admin_secret,
   ]
 } 
 
@@ -181,3 +211,4 @@ locals {
 
   }
 }
+

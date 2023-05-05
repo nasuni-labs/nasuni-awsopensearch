@@ -4,12 +4,6 @@
 ##  Organization  :   Nasuni Labs   
 #########################################################
 
-variable "create_iam_service_linked_role" {
-  description = "Whether to create IAM service linked role for AWS ElasticSearch service. Can be only one per AWS account."
-  type        = bool
-  default     = false
-}
-
 variable "domain_name" {
   description = "Domain name for Elasticsearch cluster"
   type        = string
@@ -204,6 +198,28 @@ variable "aws_profile" {
   default = "nasuni"
 }
 
+variable "es_log_type" {
+  type    = string
+  description = "Type of Elasticsearch log. Valid values: INDEX_SLOW_LOGS, SEARCH_SLOW_LOGS, ES_APPLICATION_LOGS, AUDIT_LOGS."
+  default = "ES_APPLICATION_LOGS"
+}
 variable "admin_secret" {
   default = "nasuni-labs-os-admin"
+}
+
+variable "user_vpc_id" {
+  default = ""
+}
+
+variable "user_subnet_id" {
+  default = ""
+}
+
+variable "use_private_ip" {
+  default = ""
+}  
+
+variable "nac_es_securitygroup_id" {
+  type    = string
+  default = ""
 }
